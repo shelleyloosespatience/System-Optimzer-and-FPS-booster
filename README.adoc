@@ -1,0 +1,156 @@
+= Enhanced Gaming Mode System Monitor v3.0
+:toc: left
+:sectnums:
+:icons: font
+:source-highlighter: highlightjs
+:highlightjs-theme: atom-one-dark
+
+Welcome to Enhanced Gaming Mode System Monitor v3.0! This ultra-compact, high-performance system monitor is designed to rock your gaming sessions by showing real-time stats on your CPU, RAM, GPU, and more. With an OpenGL-based FPS counter, smart auto-optimization, and slick animations, it's built to make your system monitoring both fun and effective.
+
+NOTE: This software is provided as-is. No guarantees—just raw performance and a dash of attitude.
+
+== Features
+
+- **Ultra-Compact Design:** Minimal screen usage with maximum monitoring power.
+- **OpenGL-Based FPS Counter:** Accurate, snappy FPS measurements that keep up with your game.
+- **Multi-Platform Support:** Runs on Linux, Windows, and to some extent, macOS.
+- **Comprehensive Hardware Monitoring:** Displays CPU, RAM, GPU, and network stats.
+- **Intelligent Auto-Optimization:** System resource management kicks in when you need it.
+- **Swap Memory Management:** Keeps your system running like a well-oiled machine.
+- **Sleek, Transparent UI:** Modern, minimalistic interface with color-coded indicators.
+- **Enhanced Network Speed Monitoring:** Visual cues for upload and download speeds.
+- **Animations:** Enjoy cool animations when triggering performance boosts!
+
+== Installation
+
+=== Prerequisites
+
+- **Python 3.x** – Make sure you have Python installed.
+- **Pip** – For installing the required packages.
+
+==== Required Python Packages
+
+- PyQt5 (for the UI)
+- psutil (for system stats)
+- GPUtil (for NVIDIA GPU monitoring)
+- pyamdgpuinfo (for AMD GPU monitoring)
+
+=== Installation Command Manual
+
+[source,bash]
+----
+# Clone the repository:
+git clone https://github.com/yourusername/EnhancedGamingModeSystemMonitor.git
+cd EnhancedGamingModeSystemMonitor
+
+# (Optional) Create and activate a virtual environment:
+# For Windows:
+python -m venv venv
+venv\Scripts\activate
+
+# For Linux/macOS:
+python3 -m venv venv
+source venv/bin/activate
+
+# Install the dependencies:
+pip install -r requirements.txt
+
+# Run the application:
+# For Windows:
+python main.py
+
+# For Linux/macOS:
+python3 main.py
+----
+
+=== Platform-Specific Instructions
+
+==== Windows
+
+1. Install Python 3.x from the [official website](https://www.python.org/downloads/windows/).
+2. Open Command Prompt and run the commands above.
+3. Enjoy the monitor with:
+
+[source,bash]
+----
+python main.py
+----
+
+==== Linux
+
+1. Install Python 3.x (most distros have it pre-installed; otherwise, use your package manager).
+2. You might need to install PyQt5:
+   
+[source,bash]
+----
+sudo apt-get update
+sudo apt-get install python3-pyqt5
+----
+3. Then run:
+
+[source,bash]
+----
+python3 main.py
+----
+
+==== macOS
+
+1. Install Python 3.x via [python.org](https://www.python.org/downloads/mac-osx/) or Homebrew:
+
+[source,bash]
+----
+brew install python3
+----
+2. Then run:
+
+[source,bash]
+----
+python3 main.py
+----
+*Note:* Some optimization features on macOS might be limited without proper permissions.
+
+== Usage
+
+When you launch the monitor, you'll see a sleek, frameless widget displaying real-time stats:
+
+- **FPS, CPU, RAM, and GPU Usage:** Dynamically updated as you game.
+- **Draggable Interface:** Move the monitor anywhere on your screen.
+- **Auto-Boost:** Automatically optimizes system performance when resources run low.
+- **Manual Boost:** Hit the "BOOST NOW" button to trigger performance enhancements on demand.
+- **Close Monitor:** The "Close Monitor" button forcefully kills the process—no lingering resource hogs allowed!
+
+== Contributing
+
+Contributions are more than welcome! If you have ideas to squash bugs, add new features, or just want to make it look even cooler, feel free to fork the repository and submit a pull request. Let's collaborate and take this monitor to the next level!
+
+=== How to Contribute
+
+[source,bash]
+----
+# Fork the repository.
+git clone https://github.com/yourusername/EnhancedGamingModeSystemMonitor.git
+cd EnhancedGamingModeSystemMonitor
+
+# Create a feature branch:
+git checkout -b my-awesome-feature
+
+# Commit your changes:
+git commit -m "Add my awesome feature"
+
+# Push your branch:
+git push origin my-awesome-feature
+
+# Open a Pull Request.
+----
+
+== Credits
+
+This project is brought to you by **@me_straight**.
+
+PS: I'm not too good with Python—I rock more in JavaScript, Rust, and web development. So if you see any way to improve the Python code, I'd seriously appreciate your help! :3
+
+== Animations & Interactivity
+
+For those who crave more than static documentation, consider using HTML/CSS/JavaScript to embed animations directly into your docs. Tools like Reveal.js can transform your docs into interactive presentations, and since AsciiDoc can be converted to HTML, you can easily add custom animations and dynamic effects. Enjoy mixing code with cool visuals!
+
+Happy gaming and happy coding!
