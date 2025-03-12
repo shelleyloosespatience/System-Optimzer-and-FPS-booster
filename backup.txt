@@ -24,9 +24,6 @@ import subprocess
 import threading
 import shutil
 import random
-import json
-import configparser
-from pathlib import Path
 from PyQt5.QtCore import QCoreApplication  #for our close event, that ate my resources
 from collections import defaultdict
 from PyQt5.QtCore import QTimer, Qt, QPoint, QSize, QPropertyAnimation, QRect, pyqtSignal, QEasingCurve
@@ -449,238 +446,6 @@ class AutoOptimizer:
         except:
             pass  # Silently fail if optimization doesn't work
 
-class GPUControl:
-    def __init__(self):
-        self.original_settings = {}
-        self.is_capped = True
-        self.config_dir = os.path.expanduser('~/.config/gaming-mode-monitor')
-        self.config_file = os.path.join(self.config_dir, 'gpu_settings.json')
-        self.ensure_config_dir()
-        self.vsync_enabled = True
-        
-    def ensure_config_dir(self):
-        if not os.path.exists(self.config_dir):
-            os.makedirs(self.config_dir)
-            
-    def save_original_settings(self):
-        if IS_WINDOWS:
-            if NVIDIA_GPU_AVAILABLE:
-                try:
-                    result = subprocess.check_output(['nvidia-smi', '--query-gpu=POWER_LIMIT', '--format=csv,noheader'])
-                    self.original_settings['power_limit'] = float(result.decode().strip())
-                except:
-                    pass
-            elif AMD_GPU_AVAILABLE:
-                try:
-                    # Save current AMD Windows registry settings
-                    import winreg
-                    key = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"SYSTEM\CurrentControlSet\Control\Class\{4d36e968-e325-11ce-bfc1-08002be10318}\0000", 0, winreg.KEY_READ)
-                    self.original_settings['powerLimit'] = winreg.QueryValueEx(key, "PP_PhmSoftPowerLimit")[0]
-                    winreg.CloseKey(key)
-                except:
-                    pass
-        else:  # Linux
-            if NVIDIA_GPU_AVAILABLE:
-                try:
-                    result = subprocess.check_output(['nvidia-smi', '--query-gpu=POWER_LIMIT', '--format=csv,noheader'])
-                    self.original_settings['power_limit'] = float(result.decode().strip())
-                except:
-                    pass
-            elif AMD_GPU_AVAILABLE:
-                try:
-                    # Read current AMD Linux power limit
-                    with open('/sys/class/drm/card0/device/pp_od_clk_voltage', 'r') as f:
-                        self.original_settings['power_limit'] = f.read().strip()
-                except:
-                    pass
-    
-    def toggle_fps_cap(self, admin_mode=False):
-        """Toggle both power limit and VSync"""
-        if not self.original_settings:
-            self.save_original_settings()
-            
-        self.is_capped = not self.is_capped
-        
-        # Toggle VSync
-        self.toggle_vsync(admin_mode)
-        
-        # Existing power limit code
-        if IS_WINDOWS:
-            if NVIDIA_GPU_AVAILABLE:
-                self._toggle_nvidia_windows(admin_mode)
-            elif AMD_GPU_AVAILABLE:
-                self._toggle_amd_windows(admin_mode)
-        else:
-            if NVIDIA_GPU_AVAILABLE:
-                self._toggle_nvidia_linux(admin_mode)
-            elif AMD_GPU_AVAILABLE:
-                self._toggle_amd_linux(admin_mode)
-                
-        return self.is_capped
-
-    def toggle_vsync(self, admin_mode=False):
-        """Toggle VSync settings"""
-        try:
-            if NVIDIA_GPU_AVAILABLE:
-                if IS_WINDOWS:
-                    # Using NVIDIA settings
-                    vsync_value = "1" if self.is_capped else "0"
-                    cmd = f'nvidia-settings -a "SyncToVBlank={vsync_value}"'
-                    if admin_mode:
-                        subprocess.run(['runas', '/user:Administrator', cmd])
-                    else:
-                        subprocess.run(cmd, shell=True)
-                else:
-                    # Linux NVIDIA settings
-                    vsync_value = "1" if self.is_capped else "0"
-                    cmd = f'nvidia-settings -a "SyncToVBlank={vsync_value}"'
-                    if admin_mode:
-                        subprocess.run(['pkexec', 'sh', '-c', cmd])
-                    else:
-                        subprocess.run(cmd, shell=True)
-            
-            elif AMD_GPU_AVAILABLE:
-                if IS_WINDOWS:
-                    # AMD Windows registry VSync control
-                    try:
-                        import winreg
-                        key = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, 
-                                           r"SYSTEM\CurrentControlSet\Control\Class\{4d36e968-e325-11ce-bfc1-08002be10318}\0000",
-                                           0, winreg.KEY_ALL_ACCESS)
-                        winreg.SetValueEx(key, "VSync", 0, winreg.REG_DWORD, 1 if self.is_capped else 0)
-                        winreg.CloseKey(key)
-                    except:
-                        pass
-                else:
-                    # AMD Linux VSync control
-                    vsync_value = "1" if self.is_capped else "0"
-                    cmd = f'echo "{vsync_value}" > /sys/class/drm/card0/device/vsync'
-                    if admin_mode:
-                        subprocess.run(['pkexec', 'sh', '-c', cmd])
-                    else:
-                        subprocess.run(cmd, shell=True)
-        except:
-            pass
-        
-    def _toggle_nvidia_windows(self, admin_mode):
-        cmd = 'nvidia-smi'
-        if self.is_capped:
-            args = f' -pl {self.original_settings.get("power_limit", 100)}'
-        else:
-            args = ' -pl 400'  # Unlimited power limit
-            
-        if admin_mode:
-            subprocess.run(['runas', '/user:Administrator', f'"{cmd}{args}"'])
-        else:
-            subprocess.run(f'{cmd}{args}', shell=True)
-            
-    def _toggle_amd_windows(self, admin_mode):
-        try:
-            import winreg
-            access_flags = winreg.KEY_ALL_ACCESS if admin_mode else winreg.KEY_WRITE
-            key = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, 
-                               r"SYSTEM\CurrentControlSet\Control\Class\{4d36e968-e325-11ce-bfc1-08002be10318}\0000",
-                               0, access_flags)
-            
-            if self.is_capped:
-                value = self.original_settings.get('powerLimit', 100)
-            else:
-                value = 150  # Increased power limit
-                
-            winreg.SetValueEx(key, "PP_PhmSoftPowerLimit", 0, winreg.REG_DWORD, value)
-            winreg.CloseKey(key)
-        except:
-            pass
-            
-    def _toggle_nvidia_linux(self, admin_mode):
-        cmd = 'nvidia-smi'
-        if self.is_capped:
-            args = f' -pl {self.original_settings.get("power_limit", 100)}'
-        else:
-            args = ' -pl 400'
-            
-        if admin_mode:
-            subprocess.run(['pkexec', 'sh', '-c', f'{cmd}{args}'])
-        else:
-            subprocess.run(f'{cmd}{args}', shell=True)
-            
-    def _toggle_amd_linux(self, admin_mode):
-        try:
-            if self.is_capped:
-                value = self.original_settings.get('power_limit', '')
-            else:
-                value = 's 0 1200 1000'  # Example aggressive OC values
-                
-            cmd = f'echo "{value}" > /sys/class/drm/card0/device/pp_od_clk_voltage'
-            
-            if admin_mode:
-                subprocess.run(['pkexec', 'sh', '-c', cmd])
-            else:
-                subprocess.run(cmd, shell=True)
-        except:
-            pass
-
-class ConfigManager:
-    def __init__(self):
-        self.config_dir = os.path.expanduser('~/.config/gaming-mode-monitor')
-        self.config_file = os.path.join(self.config_dir, 'settings.ini')
-        self.ensure_config_dir()
-        
-    def ensure_config_dir(self):
-        if not os.path.exists(self.config_dir):
-            os.makedirs(self.config_dir)
-            
-    def save_settings(self, settings):
-        config = configparser.ConfigParser()
-        config['Settings'] = settings
-        with open(self.config_file, 'w') as f:
-            config.write(f)
-            
-    def load_settings(self):
-        if not os.path.exists(self.config_file):
-            return {}
-            
-        config = configparser.ConfigParser()
-        config.read(self.config_file)
-        return dict(config['Settings']) if 'Settings' in config else {}
-
-class BoostProgressAnimation(QWidget):
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.progress = 0
-        self.active = False
-        self.setFixedSize(200, 4)
-        
-    def start(self):
-        self.progress = 0
-        self.active = True
-        self.update()
-        
-    def set_progress(self, value):
-        self.progress = value
-        self.update()
-        
-    def stop(self):
-        self.active = False
-        self.update()
-        
-    def paintEvent(self, event):
-        if not self.active:
-            return
-            
-        painter = QPainter(self)
-        painter.setRenderHint(QPainter.Antialiasing)
-        
-        # Draw background
-        painter.fillRect(self.rect(), QColor(40, 40, 50))
-        
-        # Draw progress
-        progress_width = int(self.width() * (self.progress / 100))
-        gradient = QLinearGradient(0, 0, self.width(), 0)
-        gradient.setColorAt(0, QColor(41, 128, 185))
-        gradient.setColorAt(1, QColor(109, 213, 237))
-        painter.fillRect(0, 0, progress_width, self.height(), gradient)
-
 class CompactMonitor(QWidget):
     def __init__(self):
         super().__init__()
@@ -721,10 +486,6 @@ class CompactMonitor(QWidget):
         # Import math for animations
         global math
         import math
-        
-        self.gpu_control = GPUControl()
-        self.config_manager = ConfigManager()
-        self.boost_progress = None
         
         self.initUI()
         
@@ -1103,22 +864,6 @@ class CompactMonitor(QWidget):
         admin_layout.addWidget(self.admin_btn)
         settings_layout.addLayout(admin_layout)
         
-        # Add FPS Cap toggle button
-        fps_layout = QHBoxLayout()
-        self.fps_cap_btn = QPushButton("🎮 FPS Cap: ON")
-        self.fps_cap_btn.setObjectName("fpsButton")
-        self.fps_cap_btn.clicked.connect(self.toggle_fps_cap)
-        fps_layout.addWidget(self.fps_cap_btn)
-        settings_layout.addLayout(fps_layout)
-        
-        # Add boost progress animation
-        self.boost_progress = BoostProgressAnimation(self)
-        self.boost_progress.hide()
-        settings_layout.addWidget(self.boost_progress)
-        
-        # Load saved settings
-        self.load_settings()
-        
         # Close button
         close_layout = QHBoxLayout()
         self.close_btn = QPushButton("Close Monitor")
@@ -1372,25 +1117,47 @@ class CompactMonitor(QWidget):
             self.boost_status.setStyleSheet("color: #AAA;")
     
     def trigger_manual_boost(self):
-        """Enhanced manual boost with progress animation"""
-        self.boost_progress.show()
-        self.boost_progress.start()
+        """Manually trigger system optimization"""
+        # Get current metrics for optimization
+        cpu_percent = psutil.cpu_percent()
+        memory = psutil.virtual_memory()
+        memory_percent = memory.percent
         
-        def perform_boost():
-            for i in range(0, 101, 5):
-                self.boost_progress.set_progress(i)
-                QThread.msleep(50)
-                
-            optimized = self.auto_optimizer.perform_optimization()
-            if optimized:
-                self.show_boost_animation(optimized)
-                self.boost_status.setText("MANUAL BOOST")
-                self.boost_status.setStyleSheet("color: #FF9800; font-weight: bold;")
-                QTimer.singleShot(3000, self.reset_boost_status)
-                
-            QTimer.singleShot(500, lambda: self.boost_progress.hide())
+        gpu_percent = 0
+        if self.has_gpu:
+            if self.has_nvidia:
+                try:
+                    gpus = GPUtil.getGPUs()
+                    if gpus:
+                        gpu = gpus[0]
+                        gpu_percent = gpu.load * 100
+                except:
+                    pass
+            elif self.has_amd:
+                try:
+                    gpu_devices = pyamdgpuinfo.get_devices()
+                    if gpu_devices:
+                        gpu = gpu_devices[0]
+                        gpu_percent = gpu.query_load() * 100
+                except:
+                    pass
+        
+        # Set all optimization types to check  :)
+        self.auto_optimizer.optimization_types = ['memory', 'cpu']
+        if self.has_gpu:
+            self.auto_optimizer.optimization_types.append('gpu')
             
-        threading.Thread(target=perform_boost).start()
+        # Perform optimization :3
+        optimized = self.auto_optimizer.perform_optimization()
+        if optimized:
+            self.show_boost_animation(optimized)
+            
+            # Update status
+            self.boost_status.setText("MANUAL BOOST")
+            self.boost_status.setStyleSheet("color: #FF9800; font-weight: bold;")
+            
+            # Reset status after 3 seconds
+            QTimer.singleShot(3000, self.reset_boost_status)
     
     def show_boost_animation(self, boost_type):
         """Show the boost animation"""
@@ -1536,28 +1303,7 @@ class CompactMonitor(QWidget):
         else:
             super().optimize_memory()
 
-    def load_settings(self):
-        settings = self.config_manager.load_settings()
-        self.auto_optimizer.enabled = settings.get('auto_boost', 'False').lower() == 'true'
-        self.auto_boost_check.setChecked(self.auto_optimizer.enabled)
-        self.fps_cap_btn.setText("🎮 FPS Cap: ON" if settings.get('fps_capped', 'True').lower() == 'true' else "🎮 FPS Cap: OFF")
-        
-    def save_settings(self):
-        settings = {
-            'auto_boost': str(self.auto_optimizer.enabled),
-            'fps_capped': str(self.gpu_control.is_capped)
-        }
-        self.config_manager.save_settings(settings)
-        
-    def toggle_fps_cap(self):
-        is_capped = self.gpu_control.toggle_fps_cap(self.is_admin)
-        self.fps_cap_btn.setText("🎮 FPS Cap: ON" if is_capped else "🎮 FPS Cap: OFF")
-        self.save_settings()
-
     def closeEvent(self, event):
-        """Save settings before closing"""
-        self.save_settings()
-        QCoreApplication.quit()
         # This will be triggered when the widget is closed.
         print("closeEvent triggered, shutting down the process!")
         import os
