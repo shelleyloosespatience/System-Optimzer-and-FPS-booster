@@ -448,31 +448,25 @@ class AutoOptimizer:
                     pass
         except:
             pass  # Silently fail if optimization doesn't work
+
 class GPUControl:
     def __init__(self):
-        print("Initializing GPU Control...")  # Add logging
         self.original_settings = {}
         self.is_capped = True
         self.config_dir = os.path.expanduser('~/.config/gaming-mode-monitor')
         self.config_file = os.path.join(self.config_dir, 'gpu_settings.json')
         self.ensure_config_dir()
         self.vsync_enabled = True
-        # Save the original GPU settings for later reversion!
-        self.save_original_settings()
-        print(f"GPU Control initialized with settings: {self.original_settings}")  # Add logging
-
+        
     def ensure_config_dir(self):
         if not os.path.exists(self.config_dir):
-            os.makedirs(self.config_dir)  # Making sure our config folder exists
+            os.makedirs(self.config_dir)
             
     def save_original_settings(self):
-        # Save current power limit settings so we can revert later
         if IS_WINDOWS:
             if NVIDIA_GPU_AVAILABLE:
                 try:
-                    result = subprocess.check_output(
-                        ['nvidia-smi', '--query-gpu=POWER_LIMIT', '--format=csv,noheader']
-                    )
+                    result = subprocess.check_output(['nvidia-smi', '--query-gpu=POWER_LIMIT', '--format=csv,noheader'])
                     self.original_settings['power_limit'] = float(result.decode().strip())
                 except:
                     pass
@@ -480,11 +474,7 @@ class GPUControl:
                 try:
                     # Save current AMD Windows registry settings
                     import winreg
-                    key = winreg.OpenKey(
-                        winreg.HKEY_LOCAL_MACHINE,
-                        r"SYSTEM\CurrentControlSet\Control\Class\{4d36e968-e325-11ce-bfc1-08002be10318}\0000",
-                        0, winreg.KEY_READ
-                    )
+                    key = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"SYSTEM\CurrentControlSet\Control\Class\{4d36e968-e325-11ce-bfc1-08002be10318}\0000", 0, winreg.KEY_READ)
                     self.original_settings['powerLimit'] = winreg.QueryValueEx(key, "PP_PhmSoftPowerLimit")[0]
                     winreg.CloseKey(key)
                 except:
@@ -492,9 +482,7 @@ class GPUControl:
         else:  # Linux
             if NVIDIA_GPU_AVAILABLE:
                 try:
-                    result = subprocess.check_output(
-                        ['nvidia-smi', '--query-gpu=POWER_LIMIT', '--format=csv,noheader']
-                    )
+                    result = subprocess.check_output(['nvidia-smi', '--query-gpu=POWER_LIMIT', '--format=csv,noheader'])
                     self.original_settings['power_limit'] = float(result.decode().strip())
                 except:
                     pass
@@ -507,63 +495,79 @@ class GPUControl:
                     pass
     
     def toggle_fps_cap(self, admin_mode=False):
-        """Toggle both power limit and VSync."""
-        print(f"Toggling FPS cap. Admin mode: {admin_mode}")  # Add logging
-        
+        """Toggle both power limit and VSync"""
         if not self.original_settings:
             self.save_original_settings()
             
-        # Flip our mode: if capped, go uncapped; if uncapped, revert to capped.
         self.is_capped = not self.is_capped
         
-        print(f"FPS cap state changed to: {'capped' if self.is_capped else 'uncapped'}")  # Add logging
+        # Toggle VSync
+        self.toggle_vsync(admin_mode)
         
-        # Toggle VSync settings accordingly.
-        success = self.toggle_vsync(admin_mode)
-        
-        if success:
-            print("VSync settings successfully changed")
+        # Existing power limit code
+        if IS_WINDOWS:
+            if NVIDIA_GPU_AVAILABLE:
+                self._toggle_nvidia_windows(admin_mode)
+            elif AMD_GPU_AVAILABLE:
+                self._toggle_amd_windows(admin_mode)
         else:
-            print("Failed to change VSync settings")
-            
+            if NVIDIA_GPU_AVAILABLE:
+                self._toggle_nvidia_linux(admin_mode)
+            elif AMD_GPU_AVAILABLE:
+                self._toggle_amd_linux(admin_mode)
+                
         return self.is_capped
 
     def toggle_vsync(self, admin_mode=False):
-        """Toggle VSync settings based on the current mode."""
+        """Toggle VSync settings"""
         try:
             if NVIDIA_GPU_AVAILABLE:
-                print("Attempting to change NVIDIA VSync settings...")  # Add logging
-                vsync_value = "1" if self.is_capped else "0"
-                cmd = f'nvidia-settings -a "SyncToVBlank={vsync_value}"'
-                
-                if admin_mode:
-                    result = subprocess.run(['pkexec', 'sh', '-c', cmd], 
-                                         capture_output=True, text=True)
+                if IS_WINDOWS:
+                    # Using NVIDIA settings
+                    vsync_value = "1" if self.is_capped else "0"
+                    cmd = f'nvidia-settings -a "SyncToVBlank={vsync_value}"'
+                    if admin_mode:
+                        subprocess.run(['runas', '/user:Administrator', cmd])
+                    else:
+                        subprocess.run(cmd, shell=True)
                 else:
-                    result = subprocess.run(cmd, shell=True, 
-                                         capture_output=True, text=True)
-                
-                print(f"NVIDIA command result: {result.stdout if result.stdout else result.stderr}")
-                return result.returncode == 0
-                
+                    # Linux NVIDIA settings
+                    vsync_value = "1" if self.is_capped else "0"
+                    cmd = f'nvidia-settings -a "SyncToVBlank={vsync_value}"'
+                    if admin_mode:
+                        subprocess.run(['pkexec', 'sh', '-c', cmd])
+                    else:
+                        subprocess.run(cmd, shell=True)
+            
             elif AMD_GPU_AVAILABLE:
-                print("Attempting to change AMD VSync settings...")  # Add logging
-                # ... rest of AMD code ...
-                
-            return False
-        except Exception as e:
-            print(f"Error toggling VSync: {str(e)}")  # Add logging
-            return False
+                if IS_WINDOWS:
+                    # AMD Windows registry VSync control
+                    try:
+                        import winreg
+                        key = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, 
+                                           r"SYSTEM\CurrentControlSet\Control\Class\{4d36e968-e325-11ce-bfc1-08002be10318}\0000",
+                                           0, winreg.KEY_ALL_ACCESS)
+                        winreg.SetValueEx(key, "VSync", 0, winreg.REG_DWORD, 1 if self.is_capped else 0)
+                        winreg.CloseKey(key)
+                    except:
+                        pass
+                else:
+                    # AMD Linux VSync control
+                    vsync_value = "1" if self.is_capped else "0"
+                    cmd = f'echo "{vsync_value}" > /sys/class/drm/card0/device/vsync'
+                    if admin_mode:
+                        subprocess.run(['pkexec', 'sh', '-c', cmd])
+                    else:
+                        subprocess.run(cmd, shell=True)
+        except:
+            pass
         
     def _toggle_nvidia_windows(self, admin_mode):
         cmd = 'nvidia-smi'
         if self.is_capped:
-            # Revert to original power limit
-            orig = self.original_settings.get("power_limit", 100)
-            args = f' -pl {orig}'
+            args = f' -pl {self.original_settings.get("power_limit", 100)}'
         else:
-            # Boost power limit for better performance
-            args = ' -pl 400'
+            args = ' -pl 400'  # Unlimited power limit
             
         if admin_mode:
             subprocess.run(['runas', '/user:Administrator', f'"{cmd}{args}"'])
@@ -574,16 +578,15 @@ class GPUControl:
         try:
             import winreg
             access_flags = winreg.KEY_ALL_ACCESS if admin_mode else winreg.KEY_WRITE
-            key = winreg.OpenKey(
-                winreg.HKEY_LOCAL_MACHINE,
-                r"SYSTEM\CurrentControlSet\Control\Class\{4d36e968-e325-11ce-bfc1-08002be10318}\0000",
-                0, access_flags
-            )
+            key = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, 
+                               r"SYSTEM\CurrentControlSet\Control\Class\{4d36e968-e325-11ce-bfc1-08002be10318}\0000",
+                               0, access_flags)
             
             if self.is_capped:
                 value = self.original_settings.get('powerLimit', 100)
             else:
-                value = 150  # Increased power limit for performance boost
+                value = 150  # Increased power limit
+                
             winreg.SetValueEx(key, "PP_PhmSoftPowerLimit", 0, winreg.REG_DWORD, value)
             winreg.CloseKey(key)
         except:
@@ -592,8 +595,7 @@ class GPUControl:
     def _toggle_nvidia_linux(self, admin_mode):
         cmd = 'nvidia-smi'
         if self.is_capped:
-            orig = self.original_settings.get("power_limit", 100)
-            args = f' -pl {orig}'
+            args = f' -pl {self.original_settings.get("power_limit", 100)}'
         else:
             args = ' -pl 400'
             
@@ -608,13 +610,16 @@ class GPUControl:
                 value = self.original_settings.get('power_limit', '')
             else:
                 value = 's 0 1200 1000'  # Example aggressive OC values
+                
             cmd = f'echo "{value}" > /sys/class/drm/card0/device/pp_od_clk_voltage'
+            
             if admin_mode:
                 subprocess.run(['pkexec', 'sh', '-c', cmd])
             else:
                 subprocess.run(cmd, shell=True)
         except:
             pass
+
 class ConfigManager:
     def __init__(self):
         self.config_dir = os.path.expanduser('~/.config/gaming-mode-monitor')
@@ -1558,6 +1563,14 @@ class CompactMonitor(QWidget):
         import os
         os._exit(0)  # Forcefully kills the process
 # # #Our close event was outside of the scope, fully kill the instance fr, this shit ate my ram for several minutes until i realized
+
+
+
+# def closeEvent(self, event):
+#     print("closeEvent triggered")
+#     import os
+#     os._exit(0)
+
 
 def main():
     """Main application entry point"""
