@@ -32,7 +32,7 @@ from PyQt5.QtWidgets import (
     QApplication, QWidget, QLabel, QVBoxLayout, QPushButton,
     QHBoxLayout, QTextEdit, QProgressBar, QGroupBox, QGridLayout,
     QSizeGrip, QComboBox, QStyle, QFrame, QSizePolicy, QMenu,
-    QToolButton, QCheckBox, QOpenGLWidget, QMessageBox, QGraphicsOpacityEffect
+    QToolButton, QCheckBox, QOpenGLWidget, QMessageBox, QGraphicsOpacityEffect, QSlider
 )
 
 # We import GPU libraries - handle if not available
@@ -451,10 +451,11 @@ class CompactMonitor(QWidget):
         super().__init__()
         self.offset = QPoint(0, 0)
         self.expanded = False
+        self.is_admin = False
         # Fixed dimensions
         self.compact_width = 350
         self.compact_height = 60
-        self.expanded_height = 400
+        self.expanded_height = 450
         
         # GPU detection
         self.has_nvidia = NVIDIA_GPU_AVAILABLE
@@ -653,32 +654,29 @@ class CompactMonitor(QWidget):
         self.ram_bar.setValue(0)
         self.ram_bar.setTextVisible(False)
         
+        # Network speed indicators initialization
+        self.down_arrow = DirectionalSpeedIndicator(self, "down")
+        self.up_arrow = DirectionalSpeedIndicator(self, "up")
+        self.net_down_value = QLabel("0 KB/s")
+        self.net_up_value = QLabel("0 KB/s")
+        self.net_down_value.setObjectName("netValue")
+        self.net_up_value.setObjectName("netValue")
+        
         # Network speed container
-        net_speed_container = QHBoxLayout()
+        net_speed_container = QVBoxLayout()  # Changed to vertical
         net_speed_container.setSpacing(2)
         
-        # Down arrow indicator
-        self.down_arrow = DirectionalSpeedIndicator(self, "down")
-        net_speed_container.addWidget(self.down_arrow)
+        # Download speed
+        down_container = QHBoxLayout()
+        down_container.addWidget(self.down_arrow)
+        down_container.addWidget(self.net_down_value)
+        net_speed_container.addLayout(down_container)
         
-        # Download speed label
-        self.net_down_value = QLabel("0 KB/s")
-        self.net_down_value.setObjectName("netValue")
-        self.net_down_value.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-        net_speed_container.addWidget(self.net_down_value)
-        
-        # Spacer
-        net_speed_container.addSpacing(4)
-        
-        # Up arrow indicator
-        self.up_arrow = DirectionalSpeedIndicator(self, "up")
-        net_speed_container.addWidget(self.up_arrow)
-        
-        # Upload speed label
-        self.net_up_value = QLabel("0 KB/s")
-        self.net_up_value.setObjectName("netValue")
-        self.net_up_value.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-        net_speed_container.addWidget(self.net_up_value)
+        # Upload speed
+        up_container = QHBoxLayout()
+        up_container.addWidget(self.up_arrow)
+        up_container.addWidget(self.net_up_value)
+        net_speed_container.addLayout(up_container)
         
         # Add network container to RAM container
         ram_container.addLayout(net_speed_container)
@@ -828,13 +826,43 @@ class CompactMonitor(QWidget):
         # Transparency
         transparency_layout = QHBoxLayout()
         transparency_layout.addWidget(QLabel("Transparency:"))
-        self.transparency_slider = QProgressBar()
-        self.transparency_slider.setMaximum(90)
+        self.transparency_slider = QSlider(Qt.Horizontal)  # Change to QSlider
         self.transparency_slider.setMinimum(10)
-        self.transparency_slider.setValue(40)
-        self.transparency_slider.setTextVisible(False)
+        self.transparency_slider.setMaximum(100)
+        self.transparency_slider.setValue(100)  # Start fully opaque
+        self.transparency_slider.setToolTip("100%")
+        self.transparency_slider.valueChanged.connect(self.on_transparency_changed)
+        self.transparency_slider.setStyleSheet("""
+            QSlider::groove:horizontal {
+                background: #2D2D40;
+                height: 6px;
+                border-radius: 3px;
+            }
+            QSlider::handle:horizontal {
+                background: #007BFF;
+                width: 12px;
+                margin: -3px 0;
+                border-radius: 6px;
+            }
+            QSlider::handle:horizontal:hover {
+                background: #0056b3;
+            }
+        """)
         transparency_layout.addWidget(self.transparency_slider)
+        
+        # Add percentage label
+        self.transparency_label = QLabel("100%")
+        self.transparency_label.setMinimumWidth(40)
+        transparency_layout.addWidget(self.transparency_label)
         settings_layout.addLayout(transparency_layout)
+        
+        # Admin mode toggle in settings
+        admin_layout = QHBoxLayout()
+        self.admin_btn = QPushButton("🛡️ Enable Admin Mode")
+        self.admin_btn.setObjectName("adminButton")
+        self.admin_btn.clicked.connect(self.request_admin)
+        admin_layout.addWidget(self.admin_btn)
+        settings_layout.addLayout(admin_layout)
         
         # Close button
         close_layout = QHBoxLayout()
@@ -875,6 +903,24 @@ class CompactMonitor(QWidget):
         desktop = QApplication.desktop()
         screen_rect = desktop.availableGeometry()
         self.move(screen_rect.width() - self.width() - 20, 20)
+        
+        self.last_transparency = 100  # Store last transparency value
+        
+        # Custom styles for admin button
+        self.setStyleSheet(self.styleSheet() + """
+            #adminButton {
+                background-color: #4a4a4a;
+                color: #ddd;
+                border: 1px solid #666;
+            }
+            #adminButton:hover {
+                background-color: #5a5a5a;
+            }
+            #adminActive {
+                background-color: #7B1FA2;
+                color: white;
+            }
+        """)
         
     def toggle_expanded(self):
         """Toggle between compact and expanded views"""
@@ -1014,8 +1060,10 @@ class CompactMonitor(QWidget):
                 self.cpu_temp_label.setText("CPU Temp: N/A")
             
             # RAM metrics
-            self.ram_label.setText(f"RAM: {memory_used:,}MB / {memory_total:,}MB ({memory_percent:.1f}%)")
-            self.ram_detailed_label.setText(f"Free: {memory_free:,}MB | Cached: {memory_cached:,}MB")
+            self.ram_label.setText(f"RAM: {memory_used:,}MB / {memory_total:,}MB")
+            self.ram_detailed_label.setText(f"({memory_percent:.1f}%) | Free: {memory_free:,}MB")
+            self.ram_label.setWordWrap(True)
+            self.ram_detailed_label.setWordWrap(True)
             
             # Swap metrics
             self.swap_label.setText(f"Swap: {swap_used:,}MB / {swap_total:,}MB ({swap_percent:.1f}%)")
@@ -1138,6 +1186,122 @@ class CompactMonitor(QWidget):
         """Handle mouse release after dragging"""
         self.offset = None
         super().mouseReleaseEvent(event)
+
+    def on_transparency_changed(self, value):
+        """Handle transparency slider value changes"""
+        opacity = value / 100.0
+        self.setWindowOpacity(opacity)
+        
+        # Update tooltip and label
+        percentage = f"{value}%"
+        self.transparency_slider.setToolTip(percentage)
+        self.transparency_label.setText(percentage)
+        
+        # Save the value for persistence (optional)
+        self.last_transparency = value
+
+    def request_admin(self):
+        """Request administrator privileges"""
+        try:
+            if IS_WINDOWS:
+                import ctypes
+                if ctypes.windll.shell32.IsUserAnAdmin():
+                    self.is_admin = True
+                    self.admin_btn.setText("🛡️ Admin Mode Active")
+                    self.admin_btn.setObjectName("adminActive")
+                    return
+                    
+                # Request elevation
+                ctypes.windll.shell32.ShellExecuteW(
+                    None, "runas", sys.executable, " ".join(sys.argv), None, 1
+                )
+                sys.exit()
+                
+            elif IS_LINUX:
+                import subprocess
+                result = subprocess.run(['pkexec', 'echo', 'Admin access granted'], 
+                                     capture_output=True, text=True)
+                if result.returncode == 0:
+                    self.is_admin = True
+                    self.admin_btn.setText("🛡️ Admin Mode Active")
+                    self.admin_btn.setObjectName("adminActive")
+                    
+            self.enhance_optimizations()
+            
+        except Exception as e:
+            QMessageBox.warning(self, "Admin Rights", 
+                              "Failed to obtain admin rights: " + str(e))
+
+    def enhance_optimizations(self):
+        """Enhanced optimization methods when running as admin"""
+        if not self.is_admin:
+            return
+
+        if IS_WINDOWS:
+            try:
+                # Set process priority
+                import win32api, win32process, win32con
+                handle = win32api.GetCurrentProcess()
+                win32process.SetPriorityClass(handle, win32process.HIGH_PRIORITY_CLASS)
+                
+                # Additional Windows optimizations
+                import winreg
+                key = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, 
+                                   r"SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile", 
+                                   0, winreg.KEY_ALL_ACCESS)
+                winreg.SetValueEx(key, "SystemResponsiveness", 0, winreg.REG_DWORD, 0)
+                winreg.CloseKey(key)
+            except:
+                pass
+
+        elif IS_LINUX:
+            try:
+                # Set process priority
+                import os
+                os.nice(-20)
+                
+                # Additional Linux optimizations
+                commands = [
+                    "echo 3 > /proc/sys/vm/drop_caches",
+                    "echo 1 > /proc/sys/vm/compact_memory",
+                    "sysctl -w vm.swappiness=10"
+                ]
+                for cmd in commands:
+                    try:
+                        subprocess.run(['pkexec', 'sh', '-c', cmd], 
+                                    stderr=subprocess.DEVNULL)
+                    except:
+                        pass
+            except:
+                pass
+
+    def optimize_memory(self):
+        """Enhanced memory optimization with admin privileges"""
+        if self.is_admin:
+            if IS_WINDOWS:
+                try:
+                    # Enhanced Windows memory optimization
+                    import ctypes
+                    ctypes.windll.psapi.EmptyWorkingSet(-1)  # All processes
+                    os.system("powershell -Command \"Get-Process | Stop-Process -Force\"")
+                except:
+                    pass
+            elif IS_LINUX:
+                try:
+                    # Enhanced Linux memory optimization
+                    commands = [
+                        "sync",
+                        "echo 3 > /proc/sys/vm/drop_caches",
+                        "echo 1 > /proc/sys/vm/compact_memory",
+                        "swapoff -a && swapon -a"
+                    ]
+                    for cmd in commands:
+                        subprocess.run(['pkexec', 'sh', '-c', cmd], 
+                                    stderr=subprocess.DEVNULL)
+                except:
+                    pass
+        else:
+            super().optimize_memory()
 
     def closeEvent(self, event):
         # This will be triggered when the widget is closed.
